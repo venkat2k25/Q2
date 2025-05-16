@@ -52,8 +52,8 @@ def normalize_brand_name(brand):
 @st.cache_data
 def load_and_process_data():
     files = [
-        'Q2 (1).xlsx',
-        'Q3 r (1).xlsx',
+        'Q2.xlsx',
+        'Q3 r.xlsx',
         'Q4.xlsx'
     ]
     demand_dfs = []
@@ -68,152 +68,7 @@ def load_and_process_data():
             xl = pd.ExcelFile(file)
             quarter = file.split('.')[0].split('Q')[1]
             for sheet in xl.sheet_names:
-                header_row = 1 if file == 'Q2 (1).xlsx' and sheet == 'Detailed Brand Demand' else 0
-                df = pd.read_excel(file, sheet_name=sheet, header=header_row)
-                df = normalize_columns(df)
-                df['Quarter'] = f'Q{quarter}'
-                if 'Brand' in df.columns:
-                    df['Brand'] = df['Brand'].apply(normalize_brand_name)
-                if 'Total Sales and Service People' in df.columns:
-                    salesforce_dfs.append(df)
-                elif 'Salary' in df.columns or 'Total Yearly Cost' in df.columns:
-                    workforce_dfs.append(df)
-                else:
-                    demand_dfs.append(df)
-        except Exception as e:
-            st.warning(f"Error loading {file}: {str(e)}")
-
-    if demand_dfs:
-        combined_demand = pd.concat(demand_dfs, ignore_index=True)
-        combined_demand = combined_demand.replace('', np.nan)
-        if 'Brand' in combined_demand.columns:
-            combined_demand['Brand'] = combined_demand['Brand'].apply(normalize_brand_name)
-        duplicates = combined_demand[combined_demand.duplicated(subset=['Brand', 'Company', 'Quarter', 'City'], keep=False)]
-        if not duplicates.empty:
-            st.warning(f"Found {len(duplicates)} duplicate Brand-Company-Quarter-City pairs:")
-            st.write(duplicates[['Brand', 'Company', 'Quarter', 'City']].drop_duplicates())
-            combined_demand = combined_demand.drop_duplicates(subset=['Brand', 'Company', 'Quarter', 'City'], keep='first')
-        combined_demand = combined_demand.dropna(subset=['Brand', 'Company', 'City', 'Price', 'Quarter'])
-    else:
-        st.error("No demand data loaded.")
-        return pd.DataFrame()
-
-    if workforce_dfs:
-        combined_workforce = pd.concat(workforce_dfs, ignore_index=True)
-        combined_workforce = combined_workforce.replace('', np.nan)
-        required_cols = ['Company', 'Total Yearly Cost']
-        combined_workforce = combined_workforce.dropna(subset=required_cols)
-        combined_workforce['Satisfaction'] = combined_workforce['Satisfaction'].fillna(combined_workforce['Satisfaction'].median())
-        combined_workforce['Number of Media Placements'] = combined_workforce['Number of Media Placements'].fillna(combined_workforce['Number of Media Placements'].median())
-    else:
-        st.warning("No workforce data loaded.")
-        combined_workforce = pd.DataFrame(columns=['Company', 'Total Yearly Cost', 'Satisfaction', 'Number of Media Placements'])
-
-    if salesforce_dfs:
-        combined_salesforce = pd.concat(salesforce_dfs, ignore_index=True)
-        combined_salesforce = combined_salesforce.replace('', np.nan)
-        combined_salesforce = normalize_columns(combined_salesforce)
-        combined_salesforce = combined_salesforce.dropna(subset=['Company', 'City', 'Total Sales and Service People'])
-        combined_salesforce = combined_salesforce.rename(columns={
-            'Recreation': 'Recreation_salesforce',
-            'Mountain': 'Mountain_salesforce',
-            'Speed': 'Speed_salesforce'
-        })
-    else:
-        st.warning("No salesforce data loaded.")
-        combined_salesforce = pd.DataFrame(columns=['Company', 'City', 'Total Sales and Service People', 'Service', 'Recreation_salesforce', 'Mountain_salesforce', 'Speed_salesforce'])
-
-    combined_df = combined_demand.merge(
-        combined_workforce[['Company', 'Total Yearly Cost', 'Satisfaction', 'Number of Media Placements']],
-        on='Company',
-        how='left'
-    )
-    combined_df = combined_df.merge(
-        combined_salesforce[['Company', 'City', 'Total Sales and Service People', 'Service', 'Recreation_salesforce', 'Mountain_salesforce', 'Speed_salesforce', 'Quarter/'
-
-System: I apologize for the interruption. The response was cut off, and it seems the code still contains the syntax error you reported. The error is in the `filter_segment_data` function, where the column renaming dictionary has an invalid entry: `f'Brand Judgement - {segment}': GND` (line 160). This should be corrected to `f'Brand Judgement - {segment}': 'Brand_Judgement'` with a comma to separate it from the next key-value pair.
-
-I'll provide the complete, corrected Streamlit app code, ensuring:
-- The syntax error in `filter_segment_data` is fixed.
-- All sheets from `Q2 (1).xlsx`, `Q3 r (1).xlsx`, and `Q4.xlsx` are used.
-- Brand normalization eliminates duplicates (e.g., `TriTan +` vs. `TriTan+`).
-- Unnecessary debug output is removed, as previously requested.
-- The file is named `price_prediction_streamlit.py` to match your error message.
-- Excel files are assumed to be in the same directory as the script (`E:\`).
-
-### Updated Code
-<xaiArtifact artifact_id="0837cf0d-35f1-436a-8797-ffcabe29fc6d" artifact_version_id="f693b797-d490-440e-ae74-ca260f0e53ed" title="price_prediction_streamlit.py" contentType="text/python">
-import streamlit as st
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.metrics import mean_squared_error
-from xgboost import XGBRegressor
-from scipy import stats
-import plotly.express as px
-import plotly.graph_objects as go
-import os
-
-# Setting page configuration
-st.set_page_config(page_title="Bike Price Predictor", layout="wide")
-
-# Defining segment-specific columns
-SEGMENT_COLUMNS = {
-    'Recreation': [
-        'Brand', 'Company', 'City', 'Recreation', 'Price', 'Rebate', 'Priority',
-        'Brand Judgement - Recreation', 'Ad Judgement - Recreation'
-    ],
-    'Mountain': [
-        'Brand', 'Company', 'City', 'Mountain', 'Price', 'Rebate', 'Priority',
-        'Brand Judgement - Mountain', 'Ad Judgement - Mountain'
-    ],
-    'Speed': [
-        'Brand', 'Company', 'City', 'Speed', 'Price', 'Rebate', 'Priority',
-        'Brand Judgement - Speed', 'Ad Judgement - Speed'
-    ]
-}
-
-# Function to normalize column names
-def normalize_columns(df):
-    column_mapping = {}
-    for col in df.columns:
-        new_col = ' '.join(str(col).split())
-        new_col = new_col.replace('Judegement', 'Judgement').replace('judgement', 'Judgement')
-        if 'Total Sales and Service People' in new_col or 'totalsalesandservicepeople' in new_col.lower().replace(' ', ''):
-            new_col = 'Total Sales and Service People'
-        column_mapping[col] = new_col
-    return df.rename(columns=column_mapping)
-
-# Function to normalize brand names
-def normalize_brand_name(brand):
-    if isinstance(brand, str):
-        brand = ' '.join(brand.split()).replace(' +', '+').replace('+ ', '+').strip()
-        return brand.title()
-    return brand
-
-# Function to load and process data
-@st.cache_data
-def load_and_process_data():
-    files = [
-        'Q2 (1).xlsx',
-        'Q3 r (1).xlsx',
-        'Q4.xlsx'
-    ]
-    demand_dfs = []
-    workforce_dfs = []
-    salesforce_dfs = []
-
-    for file in files:
-        if not os.path.exists(file):
-            st.error(f"File not found: {file}")
-            continue
-        try:
-            xl = pd.ExcelFile(file)
-            quarter = file.split('.')[0].split('Q')[1]
-            for sheet in xl.sheet_names:
-                header_row = 1 if file == 'Q2 (1).xlsx' and sheet == 'Detailed Brand Demand' else 0
+                header_row = 1 if file == 'Q2.xlsx' and sheet == 'Detailed Brand Demand' else 0
                 df = pd.read_excel(file, sheet_name=sheet, header=header_row)
                 df = normalize_columns(df)
                 df['Quarter'] = f'Q{quarter}'
