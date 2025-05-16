@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from xgboost import XGBRegressor
 from scipy import stats
@@ -88,10 +87,7 @@ def load_and_process_data():
         combined_demand = combined_demand.replace('', np.nan)
         if 'Brand' in combined_demand.columns:
             combined_demand['Brand'] = combined_demand['Brand'].apply(normalize_brand_name)
-        duplicates = combined_demand[combined_demand.duplicated(subset=['Brand', 'Company', 'Quarter', 'City'], keep=False)]
-        if not duplicates.empty:
-            st.warning(f"Found {len(duplicates)} duplicate Brand-Company-Quarter-City pairs.")
-            combined_demand = combined_demand.drop_duplicates(subset=['Brand', 'Company', 'Quarter', 'City'], keep='first')
+        combined_demand = combined_demand.drop_duplicates(subset=['Brand', 'Company', 'Quarter', 'City'], keep='first')
         combined_demand = combined_demand.dropna(subset=['Brand', 'Company', 'City', 'Price', 'Quarter'])
     else:
         st.error("No demand data loaded.")
@@ -162,15 +158,12 @@ def filter_segment_data(df, segment):
         f'{segment}_salesforce': 'Salesforce_Allocation'
     })
 
-    st.write(f"Rows for {segment} segment: {len(filtered_df)}")
     return filtered_df
 
-# Function to train model and compute metrics
-@st.cache_resource
+
 def train_model(segment, df, target):
     z_scores = np.abs(stats.zscore(df.select_dtypes(include=[np.number])))
     df = df[(z_scores < 3).all(axis=1)]
-    st.write(f"Rows after outlier removal for {segment}: {len(df)}")
 
     categorical_cols = ['Brand', 'Company', 'City', 'Quarter']
     X = df.drop([target] + categorical_cols, axis=1)
@@ -258,6 +251,22 @@ def main():
         st.error("No valid data loaded. Please check input files.")
         return
 
+    # Select company first
+    all_companies = sorted(df['Company'].unique())
+    selected_company = st.selectbox("Select Company", all_companies, index=all_companies.index('3Cycle') if '3Cycle' in all_companies else 0)
+
+    if selected_company != '3Cycle':
+        st.warning("This app is designed to show predictions for '3Cycle' brands only. Please select '3Cycle' to proceed.")
+        return
+
+    # Filter brands for the selected company
+    company_df = df[df['Company'] == selected_company]
+    all_brands = sorted(company_df['Brand'].unique())
+    if not all_brands:
+        st.error(f"No brands found for {selected_company}.")
+        return
+    selected_brand = st.selectbox("Select Brand", all_brands)
+
     prediction_type = st.selectbox("Select Prediction Type", ["Predict Price", "Predict Demand"])
     segment = st.selectbox("Select Segment", ["Recreation", "Mountain", "Speed"])
     segment_df = filter_segment_data(df, segment)
@@ -266,11 +275,17 @@ def main():
         st.error(f"No valid data available for {segment} segment.")
         return
 
-    brand_company_pairs = segment_df[['Brand', 'Company']].drop_duplicates()
-    brands = sorted(brand_company_pairs['Brand'].unique())
-    all_cities = sorted(df['City'].unique())
+    # Ensure selected brand is in the segment
+    segment_df_company = segment_df[segment_df['Company'] == selected_company]
+    if selected_brand not in segment_df_company['Brand'].unique():
+        st.error(f"{selected_brand} has no demand data in the {segment} segment for {selected_company}.")
+        return
 
-    st.write("Valid Brand-Company combinations in segment:", brand_company_pairs)
+    all_cities = sorted(df['City'].unique())
+    selected_city = st.selectbox("Select City", all_cities)
+
+    if not ((segment_df_company['Brand'] == selected_brand) & (segment_df_company['City'] == selected_city)).any():
+        st.warning(f"Note: {selected_city} is not recorded for {selected_brand} in {segment} segment.")
 
     if prediction_type == "Predict Price":
         target = 'Price'
@@ -285,17 +300,9 @@ def main():
 
     with col1:
         st.write("### Bike Details")
-        selected_brand = st.selectbox("Select Brand", brands)
-        valid_companies = sorted(brand_company_pairs[brand_company_pairs['Brand'] == selected_brand]['Company'].unique())
-        valid_companies = ['3Cycle'] if '3Cycle' in valid_companies else []
-        if not valid_companies:
-            st.error("3Cycle is not available for the selected brand in this segment.")
-            return
-        selected_company = st.selectbox("Select Company", valid_companies)
-        selected_city = st.selectbox("Select City", all_cities)
-
-        if not ((segment_df['Brand'] == selected_brand) & (segment_df['Company'] == selected_company) & (segment_df['City'] == selected_city)).any():
-            st.warning(f"Note: {selected_city} is not recorded for {selected_brand}, {selected_company} in {segment} segment.")
+        st.write(f"Company: {selected_company}")
+        st.write(f"Brand: {selected_brand}")
+        st.write(f"City: {selected_city}")
 
     with col2:
         st.write("### Market Metrics")
@@ -311,7 +318,7 @@ def main():
     with col3:
         st.write("### Company & Salesforce Metrics")
         total_yearly_cost = df[df['Company'] == selected_company]['Total Yearly Cost'].iloc[0] if not df[df['Company'] == selected_company].empty else 0
-        st.write(f"Total Yearly Cost for {selected_company}: ${total_yearly_cost:,.2f}")
+        st.write(f"Total Yearly Cost: ${total_yearly_cost:,.2f}")
         satisfaction = st.number_input("Satisfaction", min_value=0, max_value=100, value=70, step=1)
         media_placements = st.number_input("Number of Media Placements", min_value=0, value=10, step=1)
         total_sales_people = st.number_input("Total Sales and Service People", min_value=0, value=6, step=1)
@@ -373,9 +380,6 @@ def main():
         fig1, fig2 = create_visualizations(rmse, feature_importance, y_test, y_pred, target)
         st.plotly_chart(fig1, use_container_width=True)
         st.plotly_chart(fig2, use_container_width=True)
-
-        with open('rmse_log.txt', 'a') as f:
-            f.write(f"Segment: {segment}, Target: {target}, RMSE: {rmse:.2f}, Date: {pd.Timestamp.now()}\n")
 
     except Exception as e:
         st.error(f"Error in prediction: {str(e)}")
