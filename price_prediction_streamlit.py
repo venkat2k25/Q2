@@ -34,9 +34,10 @@ SEGMENT_COLUMNS = {
 def normalize_columns(df):
     column_mapping = {}
     for col in df.columns:
-        new_col = ' '.join(str(col).split())
-        new_col = new_col.replace('Judegement', 'Judgement').replace('judgement', 'Judgement')
-        if 'Total Sales and Service People' in new_col or 'totalsalesandservicepeople' in new_col.lower().replace(' ', ''):
+        new_col = ' '.join(str(col).split()).strip()
+        # Fix typos and case sensitivity
+        new_col = new_col.replace('Judegement', 'Judgement').replace('judgement', 'Judgement').replace('Judgment', 'Judgement')
+        if 'Total Sales and Service People' in new_col.lower().replace(' ', '') or 'totalsalesandservicepeoplee' in new_col.lower().replace(' ', ''):
             new_col = 'Total Sales and Service People'
         column_mapping[col] = new_col
     return df.rename(columns=column_mapping)
@@ -52,8 +53,8 @@ def normalize_brand_name(brand):
 @st.cache_data
 def load_and_process_data():
     files = [
-        'Q2.xlsx',
-        'Q3 r.xlsx',
+        'Q2 (1).xlsx',
+        'Q3 r (1).xlsx',
         'Q4.xlsx'
     ]
     demand_dfs = []
@@ -68,7 +69,7 @@ def load_and_process_data():
             xl = pd.ExcelFile(file)
             quarter = file.split('.')[0].split('Q')[1]
             for sheet in xl.sheet_names:
-                header_row = 1 if file == 'Q2.xlsx' and sheet == 'Detailed Brand Demand' else 0
+                header_row = 1 if file == 'Q2 (1).xlsx' and sheet == 'Detailed Brand Demand' else 0
                 df = pd.read_excel(file, sheet_name=sheet, header=header_row)
                 df = normalize_columns(df)
                 df['Quarter'] = f'Q{quarter}'
@@ -90,8 +91,7 @@ def load_and_process_data():
             combined_demand['Brand'] = combined_demand['Brand'].apply(normalize_brand_name)
         duplicates = combined_demand[combined_demand.duplicated(subset=['Brand', 'Company', 'Quarter', 'City'], keep=False)]
         if not duplicates.empty:
-            st.warning(f"Found {len(duplicates)} duplicate Brand-Company-Quarter-City pairs:")
-            st.write(duplicates[['Brand', 'Company', 'Quarter', 'City']].drop_duplicates())
+            st.warning(f"Found {len(duplicates)} duplicate Brand-Company-Quarter-City pairs.")
             combined_demand = combined_demand.drop_duplicates(subset=['Brand', 'Company', 'Quarter', 'City'], keep='first')
         combined_demand = combined_demand.dropna(subset=['Brand', 'Company', 'City', 'Price', 'Quarter'])
     else:
