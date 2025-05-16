@@ -35,7 +35,6 @@ def normalize_columns(df):
     column_mapping = {}
     for col in df.columns:
         new_col = ' '.join(str(col).split()).strip()
-        # Fix typos and case sensitivity
         new_col = new_col.replace('Judegement', 'Judgement').replace('judgement', 'Judgement').replace('Judgment', 'Judgement')
         if 'Total Sales and Service People' in new_col.lower().replace(' ', '') or 'totalsalesandservicepeoplee' in new_col.lower().replace(' ', ''):
             new_col = 'Total Sales and Service People'
@@ -53,9 +52,9 @@ def normalize_brand_name(brand):
 @st.cache_data
 def load_and_process_data():
     files = [
-        'Q2.xlsx',
-        'Q3 r.xlsx',
-        'Q4.xlsx'
+        'C:\\Users\\byven\\Downloads\\Q2 (1).xlsx',
+        'C:\\Users\\byven\\Downloads\\Q3 r (1).xlsx',
+        'C:\\Users\\byven\\Downloads\\Q4.xlsx'
     ]
     demand_dfs = []
     workforce_dfs = []
@@ -69,7 +68,7 @@ def load_and_process_data():
             xl = pd.ExcelFile(file)
             quarter = file.split('.')[0].split('Q')[1]
             for sheet in xl.sheet_names:
-                header_row = 1 if file == 'Q2 (1).xlsx' and sheet == 'Detailed Brand Demand' else 0
+                header_row = 1 if file == 'C:\\Users\\byven\\Downloads\\Q2 (1).xlsx' and sheet == 'Detailed Brand Demand' else 0
                 df = pd.read_excel(file, sheet_name=sheet, header=header_row)
                 df = normalize_columns(df)
                 df['Quarter'] = f'Q{quarter}'
@@ -241,36 +240,7 @@ def create_visualizations(rmse, feature_importance, y_test, y_pred):
         showlegend=True
     )
 
-    fig3 = px.histogram(
-        x=y_test - y_pred,
-        nbins=30,
-        title='Distribution of Prediction Errors',
-        labels={'x': 'Prediction Error ($)'}
-    )
-
-    fig4 = go.Figure()
-    fig4.add_trace(go.Scatter(
-        x=y_pred,
-        y=y_test - y_pred,
-        mode='markers',
-        name='Residuals',
-        marker=dict(size=8)
-    ))
-    fig4.add_trace(go.Scatter(
-        x=[y_pred.min(), y_pred.max()],
-        y=[0, 0],
-        mode='lines',
-        name='Zero Line',
-        line=dict(color='red', dash='dash')
-    ))
-    fig4.update_layout(
-        title='Residual Plot',
-        xaxis_title='Predicted Price ($)',
-        yaxis_title='Residual ($)',
-        showlegend=True
-    )
-
-    return fig1, fig2, fig3, fig4
+    return fig1, fig2
 
 # Main app
 def main():
@@ -293,7 +263,6 @@ def main():
     brand_company_pairs = segment_df[['Brand', 'Company']].drop_duplicates()
     brands = sorted(brand_company_pairs['Brand'].unique())
     all_cities = sorted(df['City'].unique())
-    all_quarters = sorted(df['Quarter'].unique())
 
     st.write("Valid Brand-Company combinations in segment:", brand_company_pairs)
 
@@ -304,9 +273,12 @@ def main():
         st.write("### Bike Details")
         selected_brand = st.selectbox("Select Brand", brands)
         valid_companies = sorted(brand_company_pairs[brand_company_pairs['Brand'] == selected_brand]['Company'].unique())
+        valid_companies = ['3Cycle'] if '3Cycle' in valid_companies else []  # Filter to only show 3Cycle
+        if not valid_companies:
+            st.error("3Cycle is not available for the selected brand in this segment.")
+            return
         selected_company = st.selectbox("Select Company", valid_companies)
         selected_city = st.selectbox("Select City", all_cities)
-        selected_quarter = st.selectbox("Select Quarter", all_quarters)
 
         if not ((segment_df['Brand'] == selected_brand) & (segment_df['Company'] == selected_company) & (segment_df['City'] == selected_city)).any():
             st.warning(f"Note: {selected_city} is not recorded for {selected_brand}, {selected_company} in {segment} segment.")
@@ -333,7 +305,7 @@ def main():
         model, ohe, scaler, rmse, feature_importance, y_test, y_pred = train_model(segment, segment_df)
 
     try:
-        categorical_encoded = ohe.transform([[selected_city, selected_quarter]])
+        categorical_encoded = ohe.transform([[selected_city, 'Q2']])
         categorical_df = pd.DataFrame(categorical_encoded, columns=ohe.get_feature_names_out(['City', 'Quarter']))
         input_data = pd.DataFrame({
             'Demand': [demand],
@@ -364,11 +336,9 @@ def main():
         st.dataframe(feature_importance.style.format({"Importance": "{:.3f}"}))
 
         st.subheader("Visualizations")
-        fig1, fig2, fig3, fig4 = create_visualizations(rmse, feature_importance, y_test, y_pred)
+        fig1, fig2 = create_visualizations(rmse, feature_importance, y_test, y_pred)
         st.plotly_chart(fig1, use_container_width=True)
         st.plotly_chart(fig2, use_container_width=True)
-        st.plotly_chart(fig3, use_container_width=True)
-        st.plotly_chart(fig4, use_container_width=True)
 
         with open('rmse_log.txt', 'a') as f:
             f.write(f"Segment: {segment}, RMSE: {rmse:.2f}, Date: {pd.Timestamp.now()}\n")
