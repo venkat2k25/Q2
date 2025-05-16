@@ -53,8 +53,8 @@ def normalize_brand_name(brand):
 @st.cache_data
 def load_and_process_data():
     files = [
-        'Q2 (1).xlsx',
-        'Q3 r (1).xlsx',
+        'Q2.xlsx',
+        'Q3 r.xlsx',
         'Q4.xlsx'
     ]
     demand_dfs = []
