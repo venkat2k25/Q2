@@ -1,5 +1,7 @@
+streamlit
 pandas
 numpy
-streamlit
-plotly
 scikit-learn
+matplotlib
+plotly
+openpyxl
