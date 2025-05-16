@@ -52,9 +52,9 @@ def normalize_brand_name(brand):
 @st.cache_data
 def load_and_process_data():
     files = [
-        'C:\\Users\\byven\\Downloads\\Q2 (1).xlsx',
-        'C:\\Users\\byven\\Downloads\\Q3 r (1).xlsx',
-        'C:\\Users\\byven\\Downloads\\Q4.xlsx'
+        'Q2.xlsx',
+        'Q3 r.xlsx',
+        'Q4.xlsx'
     ]
     demand_dfs = []
     workforce_dfs = []
@@ -68,7 +68,7 @@ def load_and_process_data():
             xl = pd.ExcelFile(file)
             quarter = file.split('.')[0].split('Q')[1]
             for sheet in xl.sheet_names:
-                header_row = 1 if file == 'C:\\Users\\byven\\Downloads\\Q2 (1).xlsx' and sheet == 'Detailed Brand Demand' else 0
+                header_row = 1 if file == "Q2.xlsx' and sheet == 'Detailed Brand Demand' else 0
                 df = pd.read_excel(file, sheet_name=sheet, header=header_row)
                 df = normalize_columns(df)
                 df['Quarter'] = f'Q{quarter}'
