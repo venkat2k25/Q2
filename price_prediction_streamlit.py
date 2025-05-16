@@ -1,202 +1,397 @@
+import streamlit as st
 import pandas as pd
 import numpy as np
-import streamlit as st
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import mean_squared_error
+import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import StandardScaler
-import warnings
-warnings.filterwarnings('ignore')
+import os
 
-# Loading and preparing data from all sheets
-def load_data():
-    brand_data = {
-        'Brand': ['Carbonix Urban', 'Carbonix Evo', 'Carbonix Terra', 'Carbonix Terra+', 'Lyvo Ascend', 'Lyvo Pulse', 
-                 'Summitra', 'Summitra Pro', 'Driftor', 'Driftor Light', 'Lumina Edge', 'Aero Fox', 'Mount Fox', 
-                 'VENTO', 'VIVA', 'OUI Speed', 'OUI Comfort', 'OUI Cycle Basic', 'OUI Adventure', 'OUI Explore', 
-                 'TriTan', 'TriPulse', 'TriTan+', 'Atalanta', 'Helios'],
-        'Company': ['Carbonix', 'Carbonix', 'Carbonix', 'Carbonix', 'Lyvo', 'Lyvo', 'Ascentra Bikes', 'Ascentra Bikes', 
-                   'Ascentra Bikes', 'Ascentra Bikes', 'Ascentra Bikes', 'Fox Line', 'Fox Line', 'PRINTED', 'PRINTED', 
-                   'OUI Cycle', 'OUI Cycle', 'OUI Cycle', 'OUI Cycle', 'OUI Cycle', '3Cycle', '3Cycle', '3Cycle', 
-                   'C-NYX', 'C-NYX'],
-        'City': ['New York City', 'New York City', 'New York City', 'New York City', 'New York City', 'New York City', 
-                'New York City', 'New York City', 'New York City', 'New York City', 'New York City', 'New York City', 
-                'New York City', 'Amsterdam', 'Amsterdam', 'Amsterdam', 'Amsterdam', 'Amsterdam', 'Amsterdam', 
-                'Amsterdam', 'Bangalore', 'Bangalore', 'Bangalore', 'Bangalore', 'Bangalore'],
-        'Recreation': [149, 0, 4, 7, 6, 0, 11, 2, 39, 87, 0, 0, 5, 0, 182, 136, 136, 66, 4, 7, 80, 5, 78, 0, 136],
-        'Mountain': [0, 0, 29, 86, 60, 0, 11, 37, 0, 0, 0, 0, 90, 0, 0, 0, 0, 0, 92, 58, 0, 64, 0, 0, 0],
-        'Speed': [0, 233, 0, 0, 0, 80, 0, 0, 0, 0, 183, 145, 0, 142, 0, 0, 0, 0, 0, 0, 0, 0, 0, 153, 0],
-        'Price': [1049, 1549, 1149, 1299, 1359, 1579, 1350, 1365, 1100, 1000, 1600, 1599, 1399, 1549, 1049, 
-                 960, 900, 800, 1150, 1000, 1000, 1350, 1100, 1449, 999],
-        'Rebate': [50, 0, 50, 0, 100, 0, 50, 0, 0, 70, 0, 0, 0, 0, 80, 0, 0, 0, 0, 0, 50, 0, 50, 0, 50],
-        'Priority': [3, 1, 4, 2, 1, 2, 2, 1, 4, 3, 5, 1, 2, 1, 2, 1, 2, 3, 4, 5, 2, 1, 3, 1, 2],
-        'Ad_Recreation': [60, 19, 32, 59, 30, 10, 50, 23, 59, 59, 0, 27, 36, 3, 59, 39, 64, 37, 32, 26, 76, 33, np.nan, 14, 76],
-        'Ad_Mountain': [20, 20, 62, 47, 78, 35, 42, 63, 27, 25, 17, 38, 57, 17, 24, 61, 30, 37, 74, 29, 41, 78, np.nan, 11, 44],
-        'Ad_Speed': [16, 63, 16, 35, 36, 74, 36, 34, 36, 24, 60, 62, 45, 55, 26, 63, 24, 37, 29, 26, 35, 37, np.nan, 71, 39],
-        'Brand_Recreation': [70, 9, 41, 50, 43, 17, 55, 40, 61, 66, 12, 7, 43, 9, 75, 74, 73, 64, 43, 45, 69, 48, 74, 7, 72],
-        'Brand_Mountain': [1, 1, 50, 57, 52, 1, 39, 45, 1, 1, 1, 1, 63, 1, 1, 8, 1, 1, 63, 60, 1, 57, 1, 1, 1],
-        'Brand_Speed': [1, 72, 1, 1, 1, 65, 1, 1, 1, 1, 67, 74, 1, 72, 1, 1, 1, 1, 1, 1, 1, 1, 1, 74, 1]
-    }
-    df_brand = pd.DataFrame(brand_data)
+# Setting page configuration
+st.set_page_config(page_title="Bike Price Predictor", layout="wide")
 
-    media_data = {
-        'Company': ['3Cycle', 'Carbonix', 'C-NYX', 'PRINTED', 'Lyvo', 'Ascentra Bikes', 'Fox Line', 'OUI Cycle'],
-        'Satisfaction': [67.0, 67.7, 68.9, 73.3, 72.8, 70.5, 71.3, 67.4],
-        'Number of Media Placements': [10, 10, 9, 6, 13, 11, 9, 7]
-    }
-    df_media = pd.DataFrame(media_data)
+# Defining segment-specific columns
+SEGMENT_COLUMNS = {
+    'Recreation': [
+        'Brand', 'Company', 'City', 'Recreation', 'Price', 'Rebate', 'Priority',
+        'Brand Judgement - Recreation', 'Ad Judgement - Recreation'
+    ],
+    'Mountain': [
+        'Brand', 'Company', 'City', 'Mountain', 'Price', 'Rebate', 'Priority',
+        'Brand Judgement - Mountain', 'Ad Judgement - Mountain'
+    ],
+    'Speed': [
+        'Brand', 'Company', 'City', 'Speed', 'Price', 'Rebate', 'Priority',
+        'Brand Judgement - Speed', 'Ad Judgement - Speed'
+    ]
+}
 
-    salesforce_data = {
-        'City': ['New York City', 'New York City', 'New York City', 'New York City', 'Amsterdam', 'Amsterdam', 
-                'Bangalore', 'Bangalore'],
-        'Company': ['Carbonix', 'Lyvo', 'Ascentra Bikes', 'Fox Line', 'PRINTED', 'OUI Cycle', '3Cycle', 'C-NYX'],
-        'Total': [6, 6, 7, 7, 7, 6, 5, 6],
-        'Service': [1, 1, 1, 1, 2, 0, 1, 1],
-        'Sales_Recreation': [1, 0, 1, 0, 2, 4, 2, 2],
-        'Sales_Mountain': [2, 3, 3, 2, 0, 2, 2, 0],
-        'Sales_Speed': [2, 2, 2, 4, 2, 0, 0, 3]
-    }
-    df_salesforce = pd.DataFrame(salesforce_data)
-
-    df = df_brand.merge(df_media, on='Company', how='left')
-    df = df.merge(df_salesforce, on=['Company', 'City'], how='left')
+# Function to normalize column names
+def normalize_columns(df):
+    column_mapping = {}
+    for col in df.columns:
+        new_col = ' '.join(str(col).split())  # Remove newlines and extra whitespace
+        if 'Judegement' in new_col or 'judgement' in new_col:
+            new_col = new_col.replace('Judegement', 'Judgement').replace('judgement', 'Judgement')
+        if 'Total Sales and Service People' in new_col or 'totalsalesandservicepeople' in new_col.lower().replace(' ', ''):
+            new_col = 'Total Sales and Service People'
+        column_mapping[col] = new_col
+    df = df.rename(columns=column_mapping)
     return df
 
-# Preprocessing the data
-def preprocess_data(df):
-    features = ['Recreation', 'Mountain', 'Speed', 'Rebate', 'Priority', 
-                'Ad_Recreation', 'Ad_Mountain', 'Ad_Speed', 
-                'Brand_Recreation', 'Brand_Mountain', 'Brand_Speed',
-                'Satisfaction', 'Number of Media Placements',
-                'Total', 'Service', 'Sales_Recreation', 'Sales_Mountain', 'Sales_Speed']
-    
-    df[features] = df[features].fillna(df[features].mean())
-    
-    X = df[features]
-    y = df['Price']
-    
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    
-    return X_scaled, y, scaler, features
+# Function to load and process data
+@st.cache_data
+def load_and_process_data():
+    files = [
+        'C:/Users/byven/Downloads/Q2 (1).xlsx',
+        'C:/Users/byven/Downloads/Q3 r (1).xlsx',
+        'C:/Users/byven/Downloads/Q4 (1).csv'
+    ]
+    demand_dfs = []
+    workforce_dfs = []
+    salesforce_dfs = []
 
-# Training the model
-def train_model(X, y):
+    for file in files:
+        if not os.path.exists(file):
+            st.error(f"File not found: {file}")
+            continue
+        try:
+            if file.endswith('.csv'):
+                df = pd.read_csv(file)
+                df = normalize_columns(df)
+                demand_dfs.append(df)
+                st.write(f"Loaded CSV: {file}, columns: {list(df.columns)}")
+            else:
+                xl = pd.ExcelFile(file)
+                for sheet in xl.sheet_names:
+                    # Special handling for Q2 Detailed Brand Demand
+                    header_row = 1 if file.endswith('Q2 (1).xlsx') and sheet == 'Detailed Brand Demand' else 0
+                    df = pd.read_excel(file, sheet_name=sheet, header=header_row)
+                    df = normalize_columns(df)
+                    st.write(f"Loaded sheet: {sheet} from {file}, columns: {list(df.columns)}")
+                    # Check for Salesforce sheet
+                    if 'Total Sales and Service People' in df.columns or 'totalsalesandservicepeople' in [col.lower().replace(' ', '') for col in df.columns]:
+                        salesforce_dfs.append(df)
+                    elif 'Salary' in df.columns or 'Total Yearly Cost' in df.columns:
+                        workforce_dfs.append(df)
+                    else:
+                        demand_dfs.append(df)
+        except Exception as e:
+            st.warning(f"Error loading {file}: {str(e)}")
+
+    # Debug workforce_dfs
+    if workforce_dfs:
+        st.write("Workforce DataFrames loaded:", [{"columns": list(df.columns), "rows": len(df)} for df in workforce_dfs])
+    else:
+        st.warning("No workforce DataFrames loaded.")
+
+    # Combining demand data
+    if demand_dfs:
+        combined_demand = pd.concat([df for df in demand_dfs if not df.empty], ignore_index=True)
+        combined_demand = combined_demand.replace('', np.nan)
+        combined_demand = combined_demand.dropna(subset=['Brand', 'Company', 'City', 'Price'])
+        st.write("Combined demand columns:", list(combined_demand.columns))
+        st.write(f"Combined demand rows: {len(combined_demand)}")
+    else:
+        st.error("No demand data loaded.")
+        return pd.DataFrame()
+
+    # Combining workforce data
+    if workforce_dfs:
+        combined_workforce = pd.concat([df for df in workforce_dfs if not df.empty], ignore_index=True)
+        combined_workforce = combined_workforce.replace('', np.nan)
+        st.write("Combined workforce columns before dropna:", list(combined_workforce.columns))
+        st.write(f"Combined workforce rows before dropna: {len(combined_workforce)}")
+        # Relaxed dropna
+        required_cols = ['Company', 'Total Yearly Cost']
+        available_cols = [col for col in required_cols if col in combined_workforce.columns]
+        if available_cols:
+            combined_workforce = combined_workforce.dropna(subset=available_cols)
+            # Fill missing Satisfaction and Number of Media Placements
+            if 'Satisfaction' in combined_workforce.columns:
+                combined_workforce['Satisfaction'] = combined_workforce['Satisfaction'].fillna(combined_workforce['Satisfaction'].median())
+            if 'Number of Media Placements' in combined_workforce.columns:
+                combined_workforce['Number of Media Placements'] = combined_workforce['Number of Media Placements'].fillna(combined_workforce['Number of Media Placements'].median())
+        else:
+            st.warning("No valid workforce columns found.")
+            combined_workforce = pd.DataFrame(columns=['Company', 'Total Yearly Cost', 'Satisfaction', 'Number of Media Placements'])
+        st.write(f"Combined workforce rows after dropna: {len(combined_workforce)}")
+    else:
+        st.warning("No workforce data loaded.")
+        combined_workforce = pd.DataFrame(columns=['Company', 'Total Yearly Cost', 'Satisfaction', 'Number of Media Placements'])
+
+    # Combining salesforce data
+    if salesforce_dfs:
+        combined_salesforce = pd.concat([df for df in salesforce_dfs if not df.empty], ignore_index=True)
+        combined_salesforce = combined_salesforce.replace('', np.nan)
+        combined_salesforce = normalize_columns(combined_salesforce)
+        st.write("Combined salesforce columns:", list(combined_salesforce.columns))
+        st.write(f"Combined salesforce rows: {len(combined_salesforce)}")
+        if 'Total Sales and Service People' in combined_salesforce.columns:
+            combined_salesforce = combined_salesforce.dropna(subset=['Company', 'City', 'Total Sales and Service People'])
+        # Rename segment columns to avoid merge conflict
+        combined_salesforce = combined_salesforce.rename(columns={
+            'Recreation': 'Recreation_salesforce',
+            'Mountain': 'Mountain_salesforce',
+            'Speed': 'Speed_salesforce'
+        })
+    else:
+        st.warning("No salesforce data loaded.")
+        combined_salesforce = pd.DataFrame(columns=['Company', 'City', 'Total Sales and Service People', 'Service', 'Recreation_salesforce', 'Mountain_salesforce', 'Speed_salesforce'])
+
+    # Merging demand with workforce data on Company
+    combined_df = combined_demand.merge(
+        combined_workforce[['Company', 'Total Yearly Cost', 'Satisfaction', 'Number of Media Placements']],
+        on='Company',
+        how='left'
+    )
+    st.write(f"Rows after workforce merge: {len(combined_df)}")
+
+    # Merging with salesforce data on Company and City
+    combined_df = combined_df.merge(
+        combined_salesforce[['Company', 'City', 'Total Sales and Service People', 'Service', 'Recreation_salesforce', 'Mountain_salesforce', 'Speed_salesforce']],
+        on=['Company', 'City'],
+        how='left'
+    )
+    st.write(f"Rows after salesforce merge: {len(combined_df)}")
+
+    # Fill missing salesforce data
+    for col in ['Total Sales and Service People', 'Service', 'Recreation_salesforce', 'Mountain_salesforce', 'Speed_salesforce']:
+        if col in combined_df.columns:
+            combined_df[col] = combined_df[col].fillna(0)
+
+    # Relaxed dropna
+    combined_df = combined_df.dropna(subset=['Total Yearly Cost'])
+    st.write(f"Rows after final dropna: {len(combined_df)}")
+    st.write("Available columns in combined DataFrame:", list(combined_df.columns))
+
+    return combined_df
+
+# Function to filter data for a specific segment
+def filter_segment_data(df, segment):
+    columns = SEGMENT_COLUMNS[segment] + [
+        'Total Yearly Cost', 'Satisfaction', 'Number of Media Placements',
+        'Total Sales and Service People', 'Service', f'{segment}_salesforce'
+    ]
+    segment_col = segment  # Recreation, Mountain, or Speed
+
+    # Checking if all required columns exist
+    missing_cols = [col for col in columns if col not in df.columns]
+    if missing_cols:
+        st.error(f"Missing columns for {segment} segment: {missing_cols}")
+        return pd.DataFrame()
+
+    # Filtering rows where segment-specific demand is non-zero
+    filtered_df = df[df[segment_col] > 0][columns].dropna()
+
+    # Renaming columns to be segment-agnostic
+    filtered_df = filtered_df.rename(columns={
+        f'Brand Judgement - {segment}': 'Brand_Judgement',
+        f'Ad Judgement - {segment}': 'Ad_Judgement',
+        segment_col: 'Demand',
+        f'{segment}_salesforce': 'Salesforce_Allocation'
+    })
+
+    return filtered_df
+
+# Function to train model and compute metrics
+@st.cache_resource
+def train_model(segment, df):
+    X = df.drop(['Price', 'Brand', 'Company', 'City'], axis=1)
+    y = df['Price']
+
+    # Encoding categorical variables
+    le_city = LabelEncoder()
+    df['City'] = le_city.fit_transform(df['City'])
+
+    X = df.drop(['Price', 'Brand', 'Company'], axis=1)
+    feature_names = X.columns
+
+    # Splitting data
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
+
+    # Training model
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
-    
+
+    # Predicting on test set
     y_pred = model.predict(X_test)
-    mse = mean_squared_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
-    
-    return model, X_test, y_test, y_pred, mse, r2
 
-# Predicting prices for new data
-def predict_price(model, scaler, features, new_data):
-    new_data_df = pd.DataFrame([new_data], columns=features)
-    new_data_scaled = scaler.transform(new_data_df)
-    predicted_price = model.predict(new_data_scaled)
-    return predicted_price[0]
+    # Calculating RMSE
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
-# Streamlit app
+    # Getting feature importance
+    importance = model.feature_importances_
+    feature_importance = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importance
+    }).sort_values(by='Importance', ascending=False)
+
+    return model, le_city, rmse, feature_importance, y_test, y_pred
+
+# Function to create visualizations
+def create_visualizations(rmse, feature_importance, y_test, y_pred):
+    # Feature Importance Bar Plot
+    fig1 = px.bar(
+        feature_importance,
+        x='Importance',
+        y='Feature',
+        title='Feature Importance',
+        orientation='h',
+        text='Importance',
+        text_auto='.3f'
+    )
+    fig1.update_layout(yaxis={'categoryorder': 'total ascending'})
+
+    # Actual vs Predicted Scatter Plot
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(
+        x=y_test,
+        y=y_pred,
+        mode='markers',
+        name='Predictions',
+        marker=dict(size=8)
+    ))
+    fig2.add_trace(go.Scatter(
+        x=[y_test.min(), y_test.max()],
+        y=[y_test.min(), y_test.max()],
+        mode='lines',
+        name='Ideal Fit',
+        line=dict(color='red', dash='dash')
+    ))
+    fig2.update_layout(
+        title='Actual vs Predicted Prices',
+        xaxis_title='Actual Price ($)',
+        yaxis_title='Predicted Price ($)',
+        showlegend=True
+    )
+
+    # Error Histogram
+    errors = y_test - y_pred
+    fig3 = px.histogram(
+        x=errors,
+        nbins=30,
+        title='Distribution of Prediction Errors',
+        labels={'x': 'Prediction Error ($)'}
+    )
+
+    return fig1, fig2, fig3
+
+# Main app
 def main():
-    st.title("Bicycle Price Prediction")
-    st.write("Predict bicycle prices using Random Forest based on demand, marketing, and salesforce data.")
+    st.title("Bike Price Predictor")
 
-    # Load and preprocess data
-    df = load_data()
-    X_scaled, y, scaler, features = preprocess_data(df)
-    
-    # Train model
-    model, X_test, y_test, y_pred, mse, r2 = train_model(X_scaled, y)
-    
-    # Display model performance
-    st.subheader("Model Performance")
-    st.write(f"**Mean Squared Error**: {mse:.2f}")
-    st.write(f"**R² Score**: {r2:.2f}")
+    # Loading data
+    with st.spinner("Loading data..."):
+        df = load_and_process_data()
 
-    # Feature importance plot
-    importance = pd.DataFrame({
-        'Feature': features,
-        'Importance': model.feature_importances_
-    }).sort_values('Importance', ascending=False)
-    
-    fig_importance = px.bar(importance, x='Importance', y='Feature', orientation='h',
-                           title='Feature Importance', height=600)
-    st.plotly_chart(fig_importance)
+    if df.empty:
+        st.error("No valid data loaded. Please check input files.")
+        return
 
-    # Actual vs Predicted plot
-    fig_pred = go.Figure()
-    fig_pred.add_trace(go.Scatter(x=y_test, y=y_pred, mode='markers',
-                                 name='Predictions', marker=dict(size=10)))
-    fig_pred.add_trace(go.Scatter(x=[y_test.min(), y_test.max()], 
-                                 y=[y_test.min(), y_test.max()],
-                                 mode='lines', name='Ideal', line=dict(dash='dash')))
-    fig_pred.update_layout(title='Actual vs Predicted Prices',
-                          xaxis_title='Actual Price ($)',
-                          yaxis_title='Predicted Price ($)',
-                          height=500)
-    st.plotly_chart(fig_pred)
+    # Segment selector
+    segment = st.selectbox("Select Segment", ["Recreation", "Mountain", "Speed"])
 
-    # User input for prediction
-    st.subheader("Predict Price for a New Bike")
-    with st.form("prediction_form"):
-        col1, col2, col3 = st.columns(3)
+    # Filtering data for selected segment
+    segment_df = filter_segment_data(df, segment)
+
+    if segment_df.empty:
+        st.error(f"No valid data available for {segment} segment.")
+        return
+
+    # Getting unique brands, companies, and cities
+    brands = sorted(segment_df['Brand'].unique())
+    companies = sorted(segment_df['Company'].unique())
+    cities = sorted(segment_df['City'].unique())
+
+    # Creating columns for input widgets
+    st.subheader("Input Parameters")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.write("### Bike Details")
+        selected_brand = st.selectbox("Select Brand", brands)
+        selected_company = st.selectbox("Select Company", companies)
+        selected_city = st.selectbox("Select City", cities)
+
+        # Filtering for valid brand-company-city combinations
+        valid_combinations = segment_df[
+            (segment_df['Brand'] == selected_brand) & 
+            (segment_df['Company'] == selected_company) &
+            (segment_df['City'] == selected_city)
+        ]
+        if valid_combinations.empty:
+            st.warning(f"Invalid combination: {selected_brand}, {selected_company}, {selected_city} in {segment} segment.")
+            return
+
+    with col2:
+        st.write("### Market Metrics")
+        demand = st.number_input("Demand", min_value=0, value=100, step=10)
+        rebate = st.number_input("Rebate ($)", min_value=0, max_value=500, value=0, step=10)
+        priority = st.number_input("Priority", min_value=1, max_value=10, value=1, step=1)
+        brand_judgement = st.number_input("Brand Judgement", min_value=0, max_value=100, value=50, step=1)
+        ad_judgement = st.number_input("Ad Judgement", min_value=0, max_value=100, value=50, step=1)
+
+    with col3:
+        st.write("### Company & Salesforce Metrics")
+        total_yearly_cost = df[df['Company'] == selected_company]['Total Yearly Cost'].iloc[0] if not df[df['Company'] == selected_company].empty else 0
+        st.write(f"Total Yearly Cost for {selected_company}: ${total_yearly_cost:,.2f}")
+        satisfaction = st.number_input("Satisfaction", min_value=0, max_value=100, value=70, step=1)
+        media_placements = st.number_input("Number of Media Placements", min_value=0, value=10, step=1)
+        total_sales_people = st.number_input("Total Sales and Service People", min_value=0, value=6, step=1)
+        service = st.number_input("Service Personnel", min_value=0, value=1, step=1)
+        salesforce_allocation = st.number_input(f"{segment} Salesforce Allocation", min_value=0, value=2, step=1)
+
+    # Training model and computing metrics
+    with st.spinner("Training model..."):
+        model, le_city, rmse, feature_importance, y_test, y_pred = train_model(segment, segment_df)
+
+    # Preparing input for prediction
+    try:
+        city_encoded = le_city.transform([selected_city])[0]
+        input_data = pd.DataFrame({
+            'City': [city_encoded],
+            'Demand': [demand],
+            'Rebate': [rebate],
+            'Priority': [priority],
+            'Brand_Judgement': [brand_judgement],
+            'Ad_Judgement': [ad_judgement],
+            'Total Yearly Cost': [total_yearly_cost],
+            'Satisfaction': [satisfaction],
+            'Number of Media Placements': [media_placements],
+            'Total Sales and Service People': [total_sales_people],
+            'Service': [service],
+            'Salesforce_Allocation': [salesforce_allocation]
+        })
+
+        # Making prediction
+        prediction = model.predict(input_data)[0]
+
+        # Displaying prediction
+        st.subheader("Predicted Price")
+        st.metric("Price ($)", f"{prediction:.2f}")
+
+        # Displaying model performance
+        st.subheader("Model Performance")
+        st.metric("RMSE ($)", f"{rmse:.2f}")
+
+        # Displaying feature importance
+        st.subheader("Feature Importance")
+        st.dataframe(feature_importance.style.format({"Importance": "{:.3f}"}))
+
+        # Creating and displaying visualizations
+        st.subheader("Visualizations")
+        fig1, fig2, fig3 = create_visualizations(rmse, feature_importance, y_test, y_pred)
         
-        with col1:
-            recreation = st.number_input("Recreation Demand", min_value=0, max_value=200, value=100)
-            mountain = st.number_input("Mountain Demand", min_value=0, max_value=200, value=0)
-            speed = st.number_input("Speed Demand", min_value=0, max_value=200, value=0)
-            rebate = st.number_input("Rebate ($)", min_value=0, max_value=200, value=50)
-            priority = st.number_input("Priority", min_value=1, max_value=5, value=2)
-            satisfaction = st.number_input("Satisfaction", min_value=0.0, max_value=100.0, value=70.0)
+        st.plotly_chart(fig1, use_container_width=True)
+        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig3, use_container_width=True)
 
-        with col2:
-            ad_recreation = st.number_input("Ad Judgement - Recreation", min_value=0, max_value=100, value=60)
-            ad_mountain = st.number_input("Ad Judgement - Mountain", min_value=0, max_value=100, value=20)
-            ad_speed = st.number_input("Ad Judgement - Speed", min_value=0, max_value=100, value=15)
-            brand_recreation = st.number_input("Brand Judgement - Recreation", min_value=0, max_value=100, value=70)
-            brand_mountain = st.number_input("Brand Judgement - Mountain", min_value=0, max_value=100, value=1)
-            brand_speed = st.number_input("Brand Judgement - Speed", min_value=0, max_value=100, value=1)
-
-        with col3:
-            media_placements = st.number_input("Number of Media Placements", min_value=0, max_value=20, value=10)
-            total_sales = st.number_input("Total Sales/Service People", min_value=0, max_value=10, value=6)
-            service = st.number_input("Service People", min_value=0, max_value=5, value=1)
-            sales_recreation = st.number_input("Sales People - Recreation", min_value=0, max_value=5, value=2)
-            sales_mountain = st.number_input("Sales People - Mountain", min_value=0, max_value=5, value=2)
-            sales_speed = st.number_input("Sales People - Speed", min_value=0, max_value=5, value=1)
-
-        submitted = st.form_submit_button("Predict Price")
-
-    if submitted:
-        new_bike = {
-            'Recreation': recreation,
-            'Mountain': mountain,
-            'Speed': speed,
-            'Rebate': rebate,
-            'Priority': priority,
-            'Ad_Recreation': ad_recreation,
-            'Ad_Mountain': ad_mountain,
-            'Ad_Speed': ad_speed,
-            'Brand_Recreation': brand_recreation,
-            'Brand_Mountain': brand_mountain,
-            'Brand_Speed': brand_speed,
-            'Satisfaction': satisfaction,
-            'Number of Media Placements': media_placements,
-            'Total': total_sales,
-            'Service': service,
-            'Sales_Recreation': sales_recreation,
-            'Sales_Mountain': sales_mountain,
-            'Sales_Speed': sales_speed
-        }
-        
-        predicted_price = predict_price(model, scaler, features, new_bike)
-        st.success(f"**Predicted Price**: ${predicted_price:.2f}")
+    except Exception as e:
+        st.error(f"Error in prediction: {str(e)}")
 
 if __name__ == "__main__":
     main()
