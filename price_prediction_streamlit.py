@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import os
 
 # Setting page configuration
-st.set_page_config(page_title="Bike Price Predictor", layout="wide")
+st.set_page_config(page_title="Bike Price and Demand Predictor", layout="wide")
 
 # Defining segment-specific columns
 SEGMENT_COLUMNS = {
@@ -68,7 +68,7 @@ def load_and_process_data():
             xl = pd.ExcelFile(file)
             quarter = file.split('.')[0].split('Q')[1]
             for sheet in xl.sheet_names:
-                header_row = 1 if file == "Q2.xlsx' and sheet == 'Detailed Brand Demand' else 0
+                header_row = 1 if file == 'Q2.xlsx' and sheet == 'Detailed Brand Demand' else 0
                 df = pd.read_excel(file, sheet_name=sheet, header=header_row)
                 df = normalize_columns(df)
                 df['Quarter'] = f'Q{quarter}'
@@ -162,24 +162,21 @@ def filter_segment_data(df, segment):
         f'{segment}_salesforce': 'Salesforce_Allocation'
     })
 
-    filtered_df['Brand_Ad_Judgement'] = filtered_df['Brand_Judgement'] * filtered_df['Ad_Judgement']
-    filtered_df['Demand_Salesforce'] = filtered_df['Demand'] * filtered_df['Salesforce_Allocation']
-
     st.write(f"Rows for {segment} segment: {len(filtered_df)}")
     return filtered_df
 
 # Function to train model and compute metrics
 @st.cache_resource
-def train_model(segment, df):
+def train_model(segment, df, target):
     z_scores = np.abs(stats.zscore(df.select_dtypes(include=[np.number])))
     df = df[(z_scores < 3).all(axis=1)]
     st.write(f"Rows after outlier removal for {segment}: {len(df)}")
 
-    X = df.drop(['Price', 'Brand', 'Company', 'City', 'Quarter'], axis=1)
-    y = df['Price']
+    categorical_cols = ['Brand', 'Company', 'City', 'Quarter']
+    X = df.drop([target] + categorical_cols, axis=1)
+    y = df[target]
 
     ohe = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    categorical_cols = ['City', 'Quarter']
     categorical_encoded = ohe.fit_transform(df[categorical_cols])
     categorical_columns = ohe.get_feature_names_out(categorical_cols)
     categorical_df = pd.DataFrame(categorical_encoded, columns=categorical_columns, index=df.index)
@@ -206,7 +203,7 @@ def train_model(segment, df):
     return model, ohe, scaler, rmse, feature_importance, y_test, y_pred
 
 # Function to create visualizations
-def create_visualizations(rmse, feature_importance, y_test, y_pred):
+def create_visualizations(rmse, feature_importance, y_test, y_pred, target):
     fig1 = px.bar(
         feature_importance,
         x='Importance',
@@ -233,18 +230,26 @@ def create_visualizations(rmse, feature_importance, y_test, y_pred):
         name='Ideal Fit',
         line=dict(color='red', dash='dash')
     ))
-    fig2.update_layout(
-        title='Actual vs Predicted Prices',
-        xaxis_title='Actual Price ($)',
-        yaxis_title='Predicted Price ($)',
-        showlegend=True
-    )
+    if target == 'Price':
+        fig2.update_layout(
+            title='Actual vs Predicted Prices',
+            xaxis_title='Actual Price ($)',
+            yaxis_title='Predicted Price ($)',
+            showlegend=True
+        )
+    else:  # target == 'Demand'
+        fig2.update_layout(
+            title='Actual vs Predicted Demand',
+            xaxis_title='Actual Demand',
+            yaxis_title='Predicted Demand',
+            showlegend=True
+        )
 
     return fig1, fig2
 
 # Main app
 def main():
-    st.title("Bike Price Predictor")
+    st.title("Bike Price and Demand Predictor")
 
     with st.spinner("Loading data..."):
         df = load_and_process_data()
@@ -253,6 +258,7 @@ def main():
         st.error("No valid data loaded. Please check input files.")
         return
 
+    prediction_type = st.selectbox("Select Prediction Type", ["Predict Price", "Predict Demand"])
     segment = st.selectbox("Select Segment", ["Recreation", "Mountain", "Speed"])
     segment_df = filter_segment_data(df, segment)
 
@@ -266,6 +272,14 @@ def main():
 
     st.write("Valid Brand-Company combinations in segment:", brand_company_pairs)
 
+    if prediction_type == "Predict Price":
+        target = 'Price'
+    else:
+        target = 'Demand'
+
+    with st.spinner("Training model..."):
+        model, ohe, scaler, rmse, feature_importance, y_test, y_pred = train_model(segment, segment_df, target)
+
     st.subheader("Input Parameters")
     col1, col2, col3 = st.columns(3)
 
@@ -273,7 +287,7 @@ def main():
         st.write("### Bike Details")
         selected_brand = st.selectbox("Select Brand", brands)
         valid_companies = sorted(brand_company_pairs[brand_company_pairs['Brand'] == selected_brand]['Company'].unique())
-        valid_companies = ['3Cycle'] if '3Cycle' in valid_companies else []  # Filter to only show 3Cycle
+        valid_companies = ['3Cycle'] if '3Cycle' in valid_companies else []
         if not valid_companies:
             st.error("3Cycle is not available for the selected brand in this segment.")
             return
@@ -285,7 +299,10 @@ def main():
 
     with col2:
         st.write("### Market Metrics")
-        demand = st.number_input("Demand", min_value=0, value=100, step=10)
+        if prediction_type == "Predict Price":
+            demand = st.number_input("Demand", min_value=0, value=100, step=10)
+        else:
+            price = st.number_input("Price ($)", min_value=0, value=500, step=10)
         rebate = st.number_input("Rebate ($)", min_value=0, max_value=500, value=0, step=10)
         priority = st.number_input("Priority", min_value=1, max_value=10, value=1, step=1)
         brand_judgement = st.number_input("Brand Judgement", min_value=0, max_value=100, value=50, step=1)
@@ -301,47 +318,64 @@ def main():
         service = st.number_input("Service Personnel", min_value=0, value=1, step=1)
         salesforce_allocation = st.number_input(f"{segment} Salesforce Allocation", min_value=0, value=2, step=1)
 
-    with st.spinner("Training model..."):
-        model, ohe, scaler, rmse, feature_importance, y_test, y_pred = train_model(segment, segment_df)
-
     try:
-        categorical_encoded = ohe.transform([[selected_city, 'Q2']])
-        categorical_df = pd.DataFrame(categorical_encoded, columns=ohe.get_feature_names_out(['City', 'Quarter']))
-        input_data = pd.DataFrame({
-            'Demand': [demand],
-            'Rebate': [rebate],
-            'Priority': [priority],
-            'Brand_Judgement': [brand_judgement],
-            'Ad_Judgement': [ad_judgement],
-            'Total Yearly Cost': [total_yearly_cost],
-            'Satisfaction': [satisfaction],
-            'Number of Media Placements': [media_placements],
-            'Total Sales and Service People': [total_sales_people],
-            'Service': [service],
-            'Salesforce_Allocation': [salesforce_allocation],
-            'Brand_Ad_Judgement': [brand_judgement * ad_judgement],
-            'Demand_Salesforce': [demand * salesforce_allocation]
-        })
+        categorical_cols = ['Brand', 'Company', 'City', 'Quarter']
+        categorical_encoded = ohe.transform([[selected_brand, selected_company, selected_city, 'Q2']])
+        categorical_df = pd.DataFrame(categorical_encoded, columns=ohe.get_feature_names_out(categorical_cols))
+
+        if prediction_type == "Predict Price":
+            input_data = pd.DataFrame({
+                'Demand': [demand],
+                'Rebate': [rebate],
+                'Priority': [priority],
+                'Brand_Judgement': [brand_judgement],
+                'Ad_Judgement': [ad_judgement],
+                'Total Yearly Cost': [total_yearly_cost],
+                'Satisfaction': [satisfaction],
+                'Number of Media Placements': [media_placements],
+                'Total Sales and Service People': [total_sales_people],
+                'Service': [service],
+                'Salesforce_Allocation': [salesforce_allocation]
+            })
+        else:  # Predict Demand
+            input_data = pd.DataFrame({
+                'Price': [price],
+                'Rebate': [rebate],
+                'Priority': [priority],
+                'Brand_Judgement': [brand_judgement],
+                'Ad_Judgement': [ad_judgement],
+                'Total Yearly Cost': [total_yearly_cost],
+                'Satisfaction': [satisfaction],
+                'Number of Media Placements': [media_placements],
+                'Total Sales and Service People': [total_sales_people],
+                'Service': [service],
+                'Salesforce_Allocation': [salesforce_allocation]
+            })
+
         input_data = pd.concat([input_data, categorical_df], axis=1)
         input_data = scaler.transform(input_data)
         prediction = model.predict(input_data)[0]
 
-        st.subheader("Predicted Price")
-        st.metric("Price ($)", f"{prediction:.2f}")
+        if prediction_type == "Predict Price":
+            st.subheader("Predicted Price")
+            st.metric("Price ($)", f"{prediction:.2f}")
+        else:
+            st.subheader("Predicted Demand")
+            st.metric("Demand", f"{prediction:.0f}")
 
         st.subheader("Model Performance")
-        st.metric("RMSE ($)", f"{rmse:.2f}")
+        st.metric("RMSE", f"{rmse:.2f}")
 
         st.subheader("Feature Importance")
         st.dataframe(feature_importance.style.format({"Importance": "{:.3f}"}))
 
         st.subheader("Visualizations")
-        fig1, fig2 = create_visualizations(rmse, feature_importance, y_test, y_pred)
+        fig1, fig2 = create_visualizations(rmse, feature_importance, y_test, y_pred, target)
         st.plotly_chart(fig1, use_container_width=True)
         st.plotly_chart(fig2, use_container_width=True)
 
         with open('rmse_log.txt', 'a') as f:
-            f.write(f"Segment: {segment}, RMSE: {rmse:.2f}, Date: {pd.Timestamp.now()}\n")
+            f.write(f"Segment: {segment}, Target: {target}, RMSE: {rmse:.2f}, Date: {pd.Timestamp.now()}\n")
 
     except Exception as e:
         st.error(f"Error in prediction: {str(e)}")
