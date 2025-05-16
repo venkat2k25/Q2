@@ -46,9 +46,9 @@ def normalize_columns(df):
 @st.cache_data
 def load_and_process_data():
     files = [
-        'C:/Users/byven/Downloads/Q2 (1).xlsx',
-        'C:/Users/byven/Downloads/Q3 r (1).xlsx',
-        'C:/Users/byven/Downloads/Q4 (1).csv'
+        'Q2.xlsx',
+        'Q3 r.xlsx',
+        'Q4.csv'
     ]
     demand_dfs = []
     workforce_dfs = []
